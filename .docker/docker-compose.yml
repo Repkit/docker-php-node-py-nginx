@@ -1,0 +1,140 @@
+version: '3.7'
+
+networks:
+  backend:
+    driver: ${NETWORKS_DRIVER}
+
+services:
+  nginx:
+    image: repkit/nginx
+    container_name: ${APP_HOST}_nginx
+    build:
+      context: .
+      dockerfile: ./nginx/Dockerfile
+      args:
+        - APP_CODE_PATH=${APP_CODE_PATH_CONTAINER}
+        - APP_GROUP=${APP_GROUP}
+        - APP_GROUP_ID=${APP_GROUP_ID}
+        - APP_USER=${APP_USER}
+        - APP_USER_ID=${APP_USER_ID}
+        - TZ=${TIMEZONE}
+    volumes:
+      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
+    ports:
+      - "${NGINX_HOST_HTTP_PORT}:80"
+      - "${NGINX_HOST_HTTPS_PORT}:443"
+    networks:
+      backend:
+        aliases:
+          - ${APP_HOST}
+
+  php-fpm:
+    image: repkit/php-fpm
+    container_name: ${APP_HOST}_phpfpm
+    build:
+      context: .
+      dockerfile: ./php-fpm/Dockerfile
+      args:
+        - APP_CODE_PATH=${APP_CODE_PATH_CONTAINER}
+        - APP_GROUP=${APP_GROUP}
+        - APP_GROUP_ID=${APP_GROUP_ID}
+        - APP_USER=${APP_USER}
+        - APP_USER_ID=${APP_USER_ID}
+        - TARGET_PHP_VERSION=${PHP_VERSION}
+        - TZ=${TIMEZONE}
+    volumes:
+      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
+    networks:
+      - backend
+
+  workspace:
+    image: repkit/workspace
+    container_name: ${APP_HOST}_workspace
+    build:
+      context: .
+      dockerfile: ./workspace/Dockerfile
+      args:
+        - APP_CODE_PATH=${APP_CODE_PATH_CONTAINER}
+        - APP_GROUP=${APP_GROUP}
+        - APP_GROUP_ID=${APP_GROUP_ID}
+        - APP_USER=${APP_USER}
+        - APP_USER_ID=${APP_USER_ID}
+        - TARGET_PHP_VERSION=${PHP_VERSION}
+        - TZ=${TIMEZONE}
+    volumes:
+      - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}
+    ports:
+      - "${WORKSPACE_HOST_SSH_PORT}:22"
+    networks:
+      - backend
+
+  nodejs:
+    image: repkit/nodejs
+    container_name: ${APP_HOST}_nodejs
+    build:
+      context: .
+      dockerfile: ./nodejs/Dockerfile
+      args:
+        - TARGET_NODEJS_VERSION=${NODEJS_VERSION}
+    command: sh -c "npm install && npm start"
+    environment:
+      - NODE_ENV=development
+      - PORT=7000
+    ports:
+      - '7000:7000'
+    working_dir: /root/njs1
+    volumes:
+      - ../public:/root/njs1:cached # <--- This will map ./njs1 to /root/njs1 inside the container.
+    networks:
+      backend:
+        aliases:
+          - repkit.node.local
+
+  python:
+    image: repkit/python
+    container_name: ${APP_HOST}_python
+    build:
+      context: .
+      dockerfile: ./python/Dockerfile
+      args:
+        - TARGET_PYTHON_VERSION=${PYTHON_VERSION}
+    command: tail -f /dev/null
+    environment:
+      - PYTHON_ENV=development
+      - PORT=8070
+    ports:
+      - '8070:8070'
+    working_dir: /scripts
+    volumes:
+      - ../py:/scripts # <--- This will map ./njs1 to /root/njs1 inside the container.
+    networks:
+      backend:
+        aliases:
+          - repkit.py.local
+
+  msyql:
+    image: mysql:${MYSQL_VERSION}
+    restart: always
+    container_name: ${APP_HOST}_mysql
+    environment:
+      MYSQL_DATABASE: 'repkit_db'
+      # So you don't have to use root, but you can if you like
+      MYSQL_USER: 'repkit'
+      # You can use whatever password you like
+      MYSQL_PASSWORD: '123456'
+      # Password for root access
+      MYSQL_ROOT_PASSWORD: 'root123!@#'
+    ports:
+      # <Port exposed> : < MySQL Port running inside container>
+      - '3306:3306'
+    expose:
+      # Opens port 3306 on the container
+      - '3306'
+    volumes:
+      - ./mysql/config/mysql.cnf:/etc/mysql/conf.d/mysql.cnf
+      - ./mysql/db.sql:/docker-entrypoint-initdb.d/db.sql
+      # Where our data will be persisted
+      - ../db/:/var/lib/mysql
+    command: mysqld --innodb-large-prefix --innodb-file-format=barracuda --innodb-file-per-table
+    networks:
+      - backend
