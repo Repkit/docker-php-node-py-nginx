@@ -1,0 +1,19 @@
+# Ignore everything
+*
+
+# But not these files...
+!.gitignore
+!Makefile
+!README.md
+# etc...
+
+# ...even if they are in subdirectories
+#!*/
+!.docker/
+!db/
+!public/
+!py/
+
+# if the files to be tracked are in subdirectories
+#!*/a/b/file1.txt
+#!*/a/b/c/*
